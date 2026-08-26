@@ -12,9 +12,6 @@ Scripts do the work; this file explains when and why. All paths are relative to 
 
 ## Nothing here is app-specific
 
-This skill lives in a shared skills repo: copy `.agents/skills/android-e2e-demo-recording/` into the
-Android repo you are working in and edit `config.env`. That is the whole port.
-
 The scripts take module names, variant, tasks and AVD from `config.env` next to this file (environment
 variables override it); everything else — result-XML locations, test names, test count, the labels on
 the video — is discovered at runtime from Gradle output, the result XMLs, and `adb logcat`.
@@ -34,9 +31,9 @@ result XML prints the directories that do have results, and a bad `AVD` prints t
 full Gradle output of the failed phase is kept in `/tmp/demo_gradle.log` — the on-camera filter shows
 only a few lines of it.
 
-The scripts take the repo under test to be the one they live in. `REPO_ROOT=/path/to/app-repo` overrides
-that, so you can also drive another checkout straight from this skills repo without copying anything;
-only the gitignored `baseline_testcases.txt` is written next to the skill.
+The repo under test is the one this skill lives in. If it is instead sitting in a separate skills repo,
+`REPO_ROOT=/path/to/app-repo` points it at that checkout without copying anything; the only file written
+next to the skill is the gitignored `baseline_testcases.txt`.
 
 ## Read this first: the three traps
 

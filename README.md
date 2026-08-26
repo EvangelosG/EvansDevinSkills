@@ -7,8 +7,10 @@ that Devin reads, plus whatever scripts it needs.
 | --- | --- |
 | [`android-e2e-demo-recording`](.agents/skills/android-e2e-demo-recording/) | Runs an Android app's unit + instrumented (Compose) tests on a Devin box and records one continuous side-by-side demo video of them, with each test's name burned in from the device log. |
 
-## Using one
+## Installing one
 
-Copy the skill's directory into the target repo's `.agents/skills/`, then edit the values the skill
-calls out (for `android-e2e-demo-recording`, the five in its `config.env`). Devin picks it up from
-there.
+Once, by hand: copy the skill's directory into the target repo's `.agents/skills/`, commit it, and edit
+the values it calls out (for `android-e2e-demo-recording`, the five in its `config.env`). From then on
+it is that repo's skill and Devin picks it up on its own — nothing here is fetched at run time.
+
+Each `SKILL.md` therefore documents only how to *use* the skill, not how to install it.
