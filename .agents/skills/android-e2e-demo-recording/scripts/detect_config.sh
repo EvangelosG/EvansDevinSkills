@@ -3,7 +3,8 @@
 # have to be configured by guessing and then reading a Gradle stack trace.
 #
 # Usage: detect_config.sh [--write]
-#   --write   replace the five values in config.env with what was detected
+#   --write   set APP_MODULE and VARIANT in config.env to what was detected;
+#             the other three are printed for you to copy if you want them
 #
 # Everything printed is derived from the checkout and from the app module's own
 # task list; nothing is hard coded per app.
@@ -113,9 +114,11 @@ fi
 if [ "$WRITE" = 1 ]; then
     CONF="$SKILL_DIR/config.env"
     cp "$CONF" "$CONF.bak"
+    # Only the value is replaced; the trailing comment on the line is what tells
+    # the next reader what the field means.
     sed -i -E \
-        -e "s|^APP_MODULE=.*|APP_MODULE=\"\\\${APP_MODULE:-$DET_APP_MODULE}\"|" \
-        -e "s|^VARIANT=.*|VARIANT=\"\\\${VARIANT:-$DET_VARIANT}\"|" \
+        -e "s|^APP_MODULE=\"[^\"]*\"|APP_MODULE=\"\\\${APP_MODULE:-$DET_APP_MODULE}\"|" \
+        -e "s|^VARIANT=\"[^\"]*\"|VARIANT=\"\\\${VARIANT:-$DET_VARIANT}\"|" \
         "$CONF"
     say "updated $CONF (previous copy at $CONF.bak)"
 fi

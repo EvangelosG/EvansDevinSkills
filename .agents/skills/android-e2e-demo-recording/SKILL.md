@@ -45,7 +45,10 @@ only a few lines of it.
 
 The repo under test is the one this skill lives in. If it is instead sitting in a separate skills repo,
 `REPO_ROOT=/path/to/app-repo` points it at that checkout without copying anything; the only file written
-next to the skill is the gitignored `baseline_testcases.txt`.
+next to the skill is the gitignored `baseline_testcases.txt`. Driving another checkout that way, export
+`REPO_ROOT` along with `APP_MODULE`/`VARIANT` (or run `detect_config.sh --write`) for the *whole*
+session: `config.env` still holds the defaults, and `verify_evidence.sh` reads them too, so a run that
+passed will look for `testDebugUnitTest` results and fail.
 
 ## Read this first: the four traps
 
@@ -141,7 +144,7 @@ $S/run_demo_suite.sh                    # add --pause-ms 800 for a slower, longe
 # stop the recording; the chunks land in ~/screencasts/<recording-id>/
 $S/finalize_recording.sh ~/screencasts/<recording-id> take_1x.mp4   # also writes /tmp/video_start_epoch
 $S/label_video.sh take_1x.mp4 take_1x_labelled.mp4
-$S/verify_evidence.sh --video take_1x_labelled.mp4
+$S/verify_evidence.sh --video "$PWD/take_1x_labelled.mp4"
 ```
 
 Run `verify_evidence.sh` before anything else touches the device: every run overwrites the result XMLs
@@ -165,7 +168,7 @@ polls for windows instead of sleeping, so it does not race konsole's startup, an
 of any size.
 
 **Pauses come from the tests, opt-in.** This is the one part of the skill that needs a change in the app
-repo: a UI test class opts in by reading `$PAUSE_ARG` (`demoPauseMs` by default):
+repo, and it is not in nowinandroid today: a UI test class opts in by reading `$PAUSE_ARG` (`demoPauseMs` by default):
 
 ```kotlin
 private val demoPauseMs: Long =
@@ -178,7 +181,11 @@ fun holdFinalState() { if (demoPauseMs > 0) Thread.sleep(maxOf(demoPauseMs * 2, 
 ```
 
 It defaults to 0, so CI, normal runs and the default take are untouched, and classes that ignore the
-argument still run normally. **Pausing is off by default**: on nowinandroid's 11 navigation tests, 800ms
+argument still run normally — which also means `--pause-ms` does nothing at all in a repo where nobody
+has added those three pieces yet. It is a flag on the runner, not a feature of the app: on a checkout
+of nowinandroid without the opt-in, `--pause-ms 800` yields a default-pace take. `run_demo_suite.sh`
+warns when no test source mentions `$PAUSE_ARG`. **Pausing is off by default**: measured with the
+opt-in applied to nowinandroid's 11 navigation tests, 800ms
 turned a ~23s run into ~80s, and a 100s video of the same eleven assertions is a worse artifact than a
 40s one where the labels carry the narration. Reach for `--pause-ms` only when a reviewer has to read the
 screens themselves.
@@ -259,8 +266,9 @@ ffmpeg -y -ss 12 -to 56 -i take_1x.mp4 -c:v libx264 -crf 26 trimmed.mp4
 $S/label_video.sh trimmed.mp4 take_1x_labelled.mp4 --trim-head 12   # or the labels lead by 12s
 ```
 
-Expect the console pane to sit empty for the first ~25s: each phase clears the screen and only its
-summary lines survive the filter. That is the filter working, not a failed capture.
+Expect the console pane to sit empty for a long opening stretch — half the take is normal, since the
+`--rerun` unit phase produces almost nothing the filter keeps. Each phase clears the screen and only
+its summary lines survive. That is the filter working, not a failed capture.
 
 ## Troubleshooting
 
