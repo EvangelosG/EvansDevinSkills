@@ -14,3 +14,5 @@ the values it calls out (for `android-e2e-demo-recording`, the five in its `conf
 it is that repo's skill and Devin picks it up on its own — nothing here is fetched at run time.
 
 Each `SKILL.md` therefore documents only how to *use* the skill, not how to install it.
+
+For a robust list of Android specific skills, see https://github.com/android/skills
