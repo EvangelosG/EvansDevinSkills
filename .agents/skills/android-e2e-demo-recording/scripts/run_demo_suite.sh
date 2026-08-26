@@ -11,6 +11,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$SCRIPT_DIR/_config.sh"
 cd "$REPO_ROOT" || exit 1
 
+# A module with no androidTest sources produces a green connected task that ran
+# nothing, which is only visible once the take is already shot.
+# Its explanation goes to stderr, so only the quiet success line is suppressed.
+"$SCRIPT_DIR/preflight_instrumented.sh" >/dev/null || exit 1
+
 PAUSE_MS=0     # pauses cost more video than they buy; opt in per take
 read -r -a UNIT_TASK_LIST <<< "$UNIT_TASKS"
 JOURNEY_LOG=/tmp/journeys.log
