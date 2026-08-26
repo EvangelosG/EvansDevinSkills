@@ -28,7 +28,11 @@ bad() { echo "FAIL: $*" >&2; FAIL=1; }
 
 X=$(instrumented_xmls | head -1)
 if [ -z "$X" ]; then
-    bad "no instrumented result XML; the run never reached the device"
+    bad "no instrumented result XML under $APP_DIR/build/outputs/androidTest-results"
+    note "either the run never reached the device, or APP_MODULE=$APP_MODULE (config.env) is"
+    note "not the module under test. Modules that have produced instrumented results:"
+    find "$REPO_ROOT" -type d -name androidTest-results -printf '%P\n' 2>/dev/null |
+        sed -e 's|/build/outputs/androidTest-results||' -e 's|^|    |' | sort
 else
     echo "instrumented:"
     note "$(grep -o 'tests="[0-9]*" failures="[0-9]*" errors="[0-9]*" skipped="[0-9]*" time="[0-9.]*"' "$X")"
@@ -66,7 +70,12 @@ while read -r d; do
         head -2 "$f" | grep -q 'failures="0" errors="0"' || bad "unit failures in $f"
     done
 done < <(unit_results_dirs)
-[ "$UNIT_SEEN" = 1 ] || bad "no unit result XML under $(unit_results_dirs | tr '\n' ' ')"
+if [ "$UNIT_SEEN" != 1 ]; then
+    bad "no unit result XML under $(unit_results_dirs | tr '\n' ' ')"
+    note "UNIT_TASKS in config.env names the tasks; task <-> directory is"
+    note "<module>/build/test-results/<task>. Directories that do exist:"
+    find "$REPO_ROOT" -type d -path '*/build/test-results/*' -prune -printf '    %P\n' 2>/dev/null | sort
+fi
 
 if [ "$RESULTS_ONLY" = 1 ]; then
     [ "$FAIL" = 0 ] && echo "OK: results complete (video not checked)"

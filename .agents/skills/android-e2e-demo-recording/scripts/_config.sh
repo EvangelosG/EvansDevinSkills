@@ -36,6 +36,41 @@ unit_results_dirs() {
     done
 }
 
+# A wrong VARIANT/APP_MODULE is the likeliest way this skill fails in a new repo:
+# the run dies after a full configuration phase, and the on-camera output filter
+# hides Gradle's explanation. Reprint it, then say which tasks would have worked.
+#   $1  the Gradle log of the failed invocation
+#   $2  the regex the on-screen filter used, so an unfiltered phase is not repeated
+explain_gradle_failure() {
+    local log="$1" filter="${2:-}" spec task project prefix found
+    echo >&2
+    # The filter that keeps the video readable also swallows this block.
+    echo '* What went wrong:' | grep -qE "$filter" ||
+        sed -n '/^\* What went wrong:/,/^\* Try:/p' "$log" | sed '$d' >&2
+
+    spec=$(sed -nE "s/.*Cannot locate tasks that match '([^']*)'.*/\1/p" "$log" | head -1)
+    [ -n "$spec" ] || return 0
+    task="${spec##*:}"
+    project="${spec%:*}"
+    prefix=$(echo "$task" | grep -oE '^[a-z]+')
+
+    if grep -q "project '${project#:}' not found" "$log"; then
+        echo "Modules in this build:" >&2
+        (cd "$REPO_ROOT" && ./gradlew -q projects 2>/dev/null) |
+            grep -Eo "Project '[^']*'" | sed "s|Project ||;s|'||g;s|^|  |" >&2
+    elif ! grep -q 'Candidates are:' "$log"; then
+        # Gradle only lists candidates for an ambiguous name, not an absent one.
+        found=$( (cd "$REPO_ROOT" && ./gradlew -q "${project}:tasks" --all 2>/dev/null) |
+            grep -Eo "^${prefix}[A-Za-z0-9]*" | sort -u)
+        [ -n "$found" ] || return 0
+        echo "${prefix}* tasks that exist in ${project}:" >&2
+        echo "$found" | sed "s|^|  ${project}:|" >&2
+    fi
+    echo >&2
+    echo "Set APP_MODULE / VARIANT / UNIT_TASKS to match, in:" >&2
+    echo "  $SKILL_DIR/config.env" >&2
+}
+
 # Instrumented XMLs land under a flavor subdirectory whose name depends on the
 # variant, so find them rather than spelling the path out.
 instrumented_xmls() {

@@ -11,8 +11,16 @@ BOOT_ANIM_FLAG="-no-boot-anim"
 
 export DISPLAY="${DISPLAY:-:0}"
 : "${ANDROID_HOME:?ANDROID_HOME is not set}"
-AVD="${AVD:-$("$ANDROID_HOME/emulator/emulator" -list-avds | head -1)}"
-[ -n "$AVD" ] || { echo "no AVD found; create one with avdmanager" >&2; exit 1; }
+INSTALLED_AVDS=$("$ANDROID_HOME/emulator/emulator" -list-avds)
+[ -n "$INSTALLED_AVDS" ] || { echo "no AVD is installed; create one with avdmanager" >&2; exit 1; }
+AVD="${AVD:-$(echo "$INSTALLED_AVDS" | head -1)}"
+# A configured-but-absent AVD otherwise fails deep inside the emulator binary.
+if ! echo "$INSTALLED_AVDS" | grep -qx -- "$AVD"; then
+    echo "AVD '$AVD' is not installed. Installed AVDs:" >&2
+    echo "$INSTALLED_AVDS" | sed 's/^/  /' >&2
+    echo "Set AVD in $SKILL_DIR/config.env, or leave it empty to use the first one." >&2
+    exit 1
+fi
 
 if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -qx 1; then
     echo "emulator already booted"

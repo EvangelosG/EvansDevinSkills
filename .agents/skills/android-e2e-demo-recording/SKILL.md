@@ -27,6 +27,11 @@ PAUSE_ARG="demoPauseMs"          # instrumentation arg the tests read to slow do
 AVD=""                           # default: the first installed AVD
 ```
 
+Getting one of those five wrong is the normal way this skill fails in a new repo, so the scripts turn
+that into an answer rather than a Gradle stack trace: a bad `VARIANT`/`UNIT_TASKS` prints the tasks that
+do exist in the project Gradle looked in, a bad `APP_MODULE` prints the modules in the build, a missing
+result XML prints the directories that do have results, and a bad `AVD` prints the installed ones.
+
 ## Read this first: the three traps
 
 1. **The screen recorder time lapses its own `*-edited.mp4`** (a 200s take becomes ~18s). Always
