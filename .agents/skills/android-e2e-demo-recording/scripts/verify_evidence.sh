@@ -10,17 +10,20 @@ set -uo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=_config.sh
 . "$SCRIPT_DIR/_config.sh"
-cd "$REPO_ROOT" || exit 1
 
 RESULTS_ONLY=0
 VIDEO=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --results-only) RESULTS_ONLY=1; shift ;;
-        --video) VIDEO="$2"; shift 2 ;;
+        # Resolved against the caller's directory, not $REPO_ROOT: the take is
+        # usually written next to the shell, which is not the repo when the
+        # skill is driving another checkout.
+        --video) VIDEO=$(realpath -m "$2"); shift 2 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
+cd "$REPO_ROOT" || exit 1
 
 FAIL=0
 note() { echo "  $*"; }

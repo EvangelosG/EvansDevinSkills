@@ -11,6 +11,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$SCRIPT_DIR/_config.sh"
 cd "$REPO_ROOT" || exit 1
 
+# A module with no androidTest sources produces a green connected task that ran
+# nothing, which is only visible once the take is already shot.
+# Its explanation goes to stderr, so only the quiet success line is suppressed.
+"$SCRIPT_DIR/preflight_instrumented.sh" >/dev/null || exit 1
+
 PAUSE_MS=0     # pauses cost more video than they buy; opt in per take
 read -r -a UNIT_TASK_LIST <<< "$UNIT_TASKS"
 JOURNEY_LOG=/tmp/journeys.log
@@ -38,9 +43,21 @@ gradle_phase() {
     exit "$status"
 }
 
+# $PAUSE_ARG only slows anything down if a test class reads it, which is a change
+# in the app repo (see SKILL.md). Where it has not been made the flag is accepted
+# and does nothing, and the operator finds out from a take that is as fast as the
+# default one.
+warn_if_pause_unused() {
+    [ "$PAUSE_MS" -gt 0 ] 2>/dev/null || return 0
+    grep -rqF "$PAUSE_ARG" --include='*.kt' --include='*.java' "$REPO_ROOT" 2>/dev/null && return 0
+    echo "warning: --pause-ms $PAUSE_MS has no effect: no test source reads \"$PAUSE_ARG\"." >&2
+    echo "  Add the demoPause() opt-in from SKILL.md to the UI test class first," >&2
+    echo "  or expect a take at the default pace." >&2
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --pause-ms) PAUSE_MS="$2"; shift 2 ;;
+        --pause-ms) PAUSE_MS="$2"; shift 2; warn_if_pause_unused ;;
         --prewarm)
             gradle_phase '.' \
                 "$APP_MODULE:assemble$VARIANT" "$APP_MODULE:assemble${VARIANT}AndroidTest" \

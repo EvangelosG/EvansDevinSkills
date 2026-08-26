@@ -24,7 +24,19 @@ PAUSE_ARG="demoPauseMs"          # instrumentation arg the tests read to slow do
 AVD=""                           # default: the first installed AVD
 ```
 
-Getting one of those five wrong is the normal way this skill fails in a new repo, so the scripts turn
+In a new repo, get them from the checkout instead of guessing:
+
+```bash
+scripts/detect_config.sh          # prints the block; --write puts it in config.env
+```
+
+It picks the module that applies the application plugin *and* has device tests (a catalog or sample
+app is an application module too), reads the variant off that module's own `connected*AndroidTest`
+tasks rather than off the build files — flavors usually come from a convention plugin — and lists the
+modules with a local test sourceset, distinguishing `:mod:test` on a JVM module from
+`:mod:test<Variant>UnitTest` on an Android one. On nowinandroid it answers `:app`, `DemoDebug`.
+
+Getting one of those five wrong is still the normal way this skill fails, so the scripts also turn
 that into an answer rather than a Gradle stack trace: a bad `VARIANT`/`UNIT_TASKS` prints the tasks that
 do exist in the project Gradle looked in, a bad `APP_MODULE` prints the modules in the build, a missing
 result XML prints the directories that do have results, and a bad `AVD` prints the installed ones. The
@@ -33,9 +45,12 @@ only a few lines of it.
 
 The repo under test is the one this skill lives in. If it is instead sitting in a separate skills repo,
 `REPO_ROOT=/path/to/app-repo` points it at that checkout without copying anything; the only file written
-next to the skill is the gitignored `baseline_testcases.txt`.
+next to the skill is the gitignored `baseline_testcases.txt`. Driving another checkout that way, export
+`REPO_ROOT` along with `APP_MODULE`/`VARIANT` (or run `detect_config.sh --write`) for the *whole*
+session: `config.env` still holds the defaults, and `verify_evidence.sh` reads them too, so a run that
+passed will look for `testDebugUnitTest` results and fail.
 
-## Read this first: the three traps
+## Read this first: the four traps
 
 1. **The screen recorder time lapses its own `*-edited.mp4`** (a 200s take becomes ~18s). Always
    re-encode the raw `*-raw-*.mkv` chunks instead — `scripts/finalize_recording.sh` does this and
@@ -45,6 +60,14 @@ next to the skill is the gitignored `baseline_testcases.txt`.
    `demoPauseMs` (below) or there is nothing to see.
 3. **Gradle marks test tasks UP-TO-DATE**, so a recorded "run" can execute zero tests. Pass `--rerun`
    per task and always confirm against the result XML, never against the console.
+4. **A green `connected...AndroidTest` may have run nothing at all.** Where the UI tests live in the
+   `test` sourceset — the Robolectric layout that Google's `testing-setup` skill sets up by default —
+   they execute on the JVM and never draw on the emulator. The device task then passes having executed
+   zero tests, the take is a video of an idle launcher, and `verify_evidence.sh` writes its first
+   baseline from that empty run, so the next run agrees with it. `preflight_instrumented.sh` refuses
+   the run before the emulator and the camera, and `run_demo_suite.sh` calls it first. Robolectric UI
+   tests are real tests, they just cannot be filmed: report them from the unit XMLs, or move the
+   journeys you want on camera into `src/androidTest`.
 
 Two smaller ones that cost a whole take each: the emulator must be started with `setsid` or it dies
 with the shell that launched it (it looks like a clean boot followed by "no emulator window"), and
@@ -75,6 +98,7 @@ Provisioned by the repo blueprint; verify rather than assume:
 
 ```bash
 S=.agents/skills/android-e2e-demo-recording/scripts
+$S/detect_config.sh --write             # first run in a new repo only
 $S/boot_emulator.sh                     # idempotent; waits for sys.boot_completed, not just adb
 $S/run_demo_suite.sh --prewarm          # build everything first
 $S/run_demo_suite.sh
@@ -120,7 +144,7 @@ $S/run_demo_suite.sh                    # add --pause-ms 800 for a slower, longe
 # stop the recording; the chunks land in ~/screencasts/<recording-id>/
 $S/finalize_recording.sh ~/screencasts/<recording-id> take_1x.mp4   # also writes /tmp/video_start_epoch
 $S/label_video.sh take_1x.mp4 take_1x_labelled.mp4
-$S/verify_evidence.sh --video take_1x_labelled.mp4
+$S/verify_evidence.sh --video "$PWD/take_1x_labelled.mp4"
 ```
 
 Run `verify_evidence.sh` before anything else touches the device: every run overwrites the result XMLs
@@ -144,7 +168,7 @@ polls for windows instead of sleeping, so it does not race konsole's startup, an
 of any size.
 
 **Pauses come from the tests, opt-in.** This is the one part of the skill that needs a change in the app
-repo: a UI test class opts in by reading `$PAUSE_ARG` (`demoPauseMs` by default):
+repo, and it is not in nowinandroid today: a UI test class opts in by reading `$PAUSE_ARG` (`demoPauseMs` by default):
 
 ```kotlin
 private val demoPauseMs: Long =
@@ -157,7 +181,11 @@ fun holdFinalState() { if (demoPauseMs > 0) Thread.sleep(maxOf(demoPauseMs * 2, 
 ```
 
 It defaults to 0, so CI, normal runs and the default take are untouched, and classes that ignore the
-argument still run normally. **Pausing is off by default**: on nowinandroid's 11 navigation tests, 800ms
+argument still run normally — which also means `--pause-ms` does nothing at all in a repo where nobody
+has added those three pieces yet. It is a flag on the runner, not a feature of the app: on a checkout
+of nowinandroid without the opt-in, `--pause-ms 800` yields a default-pace take. `run_demo_suite.sh`
+warns when no test source mentions `$PAUSE_ARG`. **Pausing is off by default**: measured with the
+opt-in applied to nowinandroid's 11 navigation tests, 800ms
 turned a ~23s run into ~80s, and a 100s video of the same eleven assertions is a worse artifact than a
 40s one where the labels carry the narration. Reach for `--pause-ms` only when a reviewer has to read the
 screens themselves.
@@ -238,8 +266,9 @@ ffmpeg -y -ss 12 -to 56 -i take_1x.mp4 -c:v libx264 -crf 26 trimmed.mp4
 $S/label_video.sh trimmed.mp4 take_1x_labelled.mp4 --trim-head 12   # or the labels lead by 12s
 ```
 
-Expect the console pane to sit empty for the first ~25s: each phase clears the screen and only its
-summary lines survive the filter. That is the filter working, not a failed capture.
+Expect the console pane to sit empty for a long opening stretch — half the take is normal, since the
+`--rerun` unit phase produces almost nothing the filter keeps. Each phase clears the screen and only
+its summary lines survive. That is the filter working, not a failed capture.
 
 ## Troubleshooting
 
@@ -250,6 +279,7 @@ summary lines survive the filter. That is the filter working, not a failed captu
 | No emulator window on screen | `DISPLAY` unset; export `DISPLAY=:0` before emulator and wmctrl. |
 | `adb` reports no devices after a box restart | Caches survive restarts, the emulator/konsole/adb server do not. Re-run boot + placement. |
 | Test tasks print `UP-TO-DATE`, video shows nothing | Missing `--rerun` per task. |
+| `no instrumented tests; there is nothing for a device to run` | The preflight. Either `APP_MODULE` is wrong (it lists the modules that do have an `androidTest` sourceset) or the UI tests are Robolectric ones in `test`, which no camera can see. |
 | "configuration cache discarded" on connected tests | Expected (OSS-licenses task), not a failure. |
 | `screenrecord` stops early | ~180s per file limit, and check free space on `/sdcard`. |
 | Console floods with `preBuild UP-TO-DATE` | Use `grep -E`, not `-Ei`: case-insensitive `BUILD` matches everything. |
