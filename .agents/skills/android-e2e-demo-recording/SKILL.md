@@ -30,7 +30,13 @@ AVD=""                           # default: the first installed AVD
 Getting one of those five wrong is the normal way this skill fails in a new repo, so the scripts turn
 that into an answer rather than a Gradle stack trace: a bad `VARIANT`/`UNIT_TASKS` prints the tasks that
 do exist in the project Gradle looked in, a bad `APP_MODULE` prints the modules in the build, a missing
-result XML prints the directories that do have results, and a bad `AVD` prints the installed ones.
+result XML prints the directories that do have results, and a bad `AVD` prints the installed ones. The
+full Gradle output of the failed phase is kept in `/tmp/demo_gradle.log` — the on-camera filter shows
+only a few lines of it.
+
+The scripts take the repo under test to be the one they live in. `REPO_ROOT=/path/to/app-repo` overrides
+that, so you can also drive another checkout straight from this skills repo without copying anything;
+only the gitignored `baseline_testcases.txt` is written next to the skill.
 
 ## Read this first: the three traps
 

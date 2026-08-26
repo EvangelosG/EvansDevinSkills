@@ -77,7 +77,9 @@ done < <(unit_results_dirs)
 screen_clear
 # $PAUSE_ARG is read by the app's demo-aware test classes; it defaults to 0 there,
 # so CI is unaffected, and it is simply ignored by classes that do not read it.
-gradle_phase 'Starting [0-9]+ tests|Tests [0-9]+/|Finished [0-9]+ tests|BUILD SUCCESSFUL|BUILD FAILED|FAILURE|failed' \
+# No lowercase "failed" here: it would also match the "Execution failed for task"
+# line, which explain_gradle_failure reprints, and the operator would see it twice.
+gradle_phase 'Starting [0-9]+ tests|Tests [0-9]+/|Finished [0-9]+ tests|BUILD SUCCESSFUL|FAILED|FAILURE' \
     "$CONNECTED_TASK" -Pandroid.testInstrumentationRunnerArguments."$PAUSE_ARG"="$PAUSE_MS"
 
 date +%s > /tmp/demo_run_end_epoch

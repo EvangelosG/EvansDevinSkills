@@ -49,26 +49,36 @@ explain_gradle_failure() {
         sed -n '/^\* What went wrong:/,/^\* Try:/p' "$log" | sed '$d' >&2
 
     spec=$(sed -nE "s/.*Cannot locate tasks that match '([^']*)'.*/\1/p" "$log" | head -1)
-    [ -n "$spec" ] || return 0
-    task="${spec##*:}"
-    project="${spec%:*}"
-    prefix=$(echo "$task" | grep -oE '^[a-z]+')
+    if [ -n "$spec" ]; then
+        task="${spec##*:}"
+        project="${spec%:*}"
+        # The verb a task name starts with ("test", "assemble", "connected") is what
+        # makes a useful shortlist. A misconfigured name may not have one, and an
+        # unguarded no-match grep exits 1: set -e would then swallow the rest of
+        # this advice, config.env pointer included.
+        prefix=$(echo "$task" | grep -oE '^[a-z]+' || true)
 
-    if grep -q "project '${project#:}' not found" "$log"; then
-        echo "Modules in this build:" >&2
-        (cd "$REPO_ROOT" && ./gradlew -q projects 2>/dev/null) |
-            grep -Eo "Project '[^']*'" | sed "s|Project ||;s|'||g;s|^|  |" >&2
-    elif ! grep -q 'Candidates are:' "$log"; then
-        # Gradle only lists candidates for an ambiguous name, not an absent one.
-        found=$( (cd "$REPO_ROOT" && ./gradlew -q "${project}:tasks" --all 2>/dev/null) |
-            grep -Eo "^${prefix}[A-Za-z0-9]*" | sort -u)
-        [ -n "$found" ] || return 0
-        echo "${prefix}* tasks that exist in ${project}:" >&2
-        echo "$found" | sed "s|^|  ${project}:|" >&2
+        if grep -q "project '${project#:}' not found" "$log"; then
+            echo "Modules in this build:" >&2
+            (cd "$REPO_ROOT" && ./gradlew -q projects 2>/dev/null) |
+                { grep -Eo "Project '[^']*'" || true; } | sed "s|Project ||;s|'||g;s|^|  |" >&2
+        elif [ -n "$prefix" ] && ! grep -q 'Candidates are:' "$log"; then
+            # Gradle only lists candidates for an ambiguous name, not an absent one.
+            # || true: callers run under pipefail, where a no-match grep would
+            # fail the assignment and abort before the config.env pointer below.
+            found=$( (cd "$REPO_ROOT" && ./gradlew -q "${project}:tasks" --all 2>/dev/null) |
+                grep -Eo "^${prefix}[A-Za-z0-9]*" | sort -u || true)
+            if [ -n "$found" ]; then
+                echo "${prefix}* tasks that exist in ${project}:" >&2
+                echo "$found" | sed "s|^|  ${project}:|" >&2
+            fi
+        fi
+        echo >&2
+        echo "Set APP_MODULE / VARIANT / UNIT_TASKS to match, in:" >&2
+        echo "  $SKILL_DIR/config.env" >&2
     fi
-    echo >&2
-    echo "Set APP_MODULE / VARIANT / UNIT_TASKS to match, in:" >&2
-    echo "  $SKILL_DIR/config.env" >&2
+    # Gradle's own "See log for more details" means a log it does not name here.
+    echo "full Gradle output: $log" >&2
 }
 
 # Instrumented XMLs land under a flavor subdirectory whose name depends on the
