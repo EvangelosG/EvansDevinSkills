@@ -6,6 +6,7 @@ that Devin reads, plus whatever scripts it needs.
 | Skill | What it does |
 | --- | --- |
 | [`android-e2e-demo-recording`](.agents/skills/android-e2e-demo-recording/) | Runs an Android app's unit + instrumented (Compose) tests on a Devin box and records one continuous side-by-side demo video of them, with each test's name burned in from the device log. |
+| [`repo-audit-workflow`](.agents/skills/repo-audit-workflow/) | A [dynamic workflow](https://docs.devin.ai/work-with-devin/dynamic-workflows) that audits a repo one agent per source file in parallel, then consolidates the findings into a review document and opens a PR. |
 
 ## Installing one
 
