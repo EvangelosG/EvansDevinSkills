@@ -9,6 +9,9 @@ Nothing about the target app is configured: the source root comes from angular.j
 every unit is classified by the Angular decorator in its source rather than by its
 filename, so apps that do not follow the style guide's `*.component.ts` convention
 (Angular 20's `header.ts`, Nx libraries, hand-rolled layouts) are discovered the same way.
+A state library (NgRx/NGXS/Akita/Elf) is detected the same way, and when one is present the
+foundation stage ports it to Redux Toolkit and publishes the hooks and selectors that the
+fan-out agents must use — the store is the one contract every component shares.
 
     REPO_DIR   absolute path to the Angular checkout (default: cwd)
     APP_DIR    override the discovered Angular sources root, relative to REPO_DIR
@@ -89,6 +92,14 @@ _ROUTES = re.compile(r":\s*Routes\b|RouterModule\.for(?:Root|Child)\s*\(")
 # `export class Story {}` style, which is a data class in Angular apps, not a service.
 _TYPES_ONLY = re.compile(r"export\s+(?:interface|type|enum|class)\b")
 _ANGULAR_IMPORT = re.compile(r"""from\s+['"]@angular/""")
+# A store is the one Angular pattern that spans every component, so it has to be found
+# before the fan-out and ported behind a published API like the services are.
+_STATE_LIBS = {
+    "ngrx": re.compile(r"""from\s+['"]@ngrx/"""),
+    "ngxs": re.compile(r"""from\s+['"]@ngxs/"""),
+    "akita": re.compile(r"""from\s+['"]@datorama/akita"""),
+    "elf": re.compile(r"""from\s+['"]@ngneat/elf"""),
+}
 
 
 def _rel(path):
@@ -139,8 +150,9 @@ def _scan_repo():
     found = {
         key: []
         for key in ("components", "services", "pipes", "directives", "modules", "guards",
-                    "models", "routes", "other")
+                    "models", "routes", "other", "store")
     }
+    state_libs = set()
     for dirpath, dirnames, filenames in os.walk(app_root):
         dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", "dist"))
         for name in sorted(filenames):
@@ -151,6 +163,12 @@ def _scan_repo():
                 text = fh.read()
             decorator = _DECORATOR.search(text)
             kind = decorator.group(1) if decorator else None
+            libraries = [lib for lib, pat in _STATE_LIBS.items() if pat.search(text)]
+            if libraries:
+                # NGXS/Akita state carries its own decorators, so it would otherwise land
+                # in `models` and be "copied across unchanged" — it has to be ported.
+                state_libs.update(libraries)
+                found["store"].append(_rel(path))
             if kind == "Component":
                 found["components"].append(_describe_component(path, text))
             elif kind == "Injectable":
@@ -165,6 +183,8 @@ def _scan_repo():
                 found["modules"].append(_rel(path))
             elif _GUARD.search(text):
                 found["guards"].append(_rel(path))  # functional guard, no decorator
+            elif libraries:
+                pass  # already recorded under `store`
             elif _TYPES_ONLY.search(text) and not _ANGULAR_IMPORT.search(text):
                 found["models"].append(_rel(path))
             elif not kind and not _ROUTES.search(text):
@@ -186,11 +206,13 @@ def _scan_repo():
         labels.append(label if taken[label] == 1 else f"{label}-{taken[label]}")
     for component, label in zip(components, labels):
         component["label"] = label
-    return {
+    inventory = {
         "source_root": APP_DIR,
         "components": components,
         **{key: sorted(set(value)) for key, value in found.items()},
     }
+    inventory["state_libraries"] = sorted(state_libs)
+    return inventory
 
 
 def load_inventory():
@@ -332,6 +354,35 @@ CSS scoping rules (Angular ViewEncapsulation has no React equivalent — read ca
   first mounts under Vite. Import its stylesheet from a component that is always mounted.
 """
 
+# Only apps that actually have a store pay for these rules; for everything else the block is
+# empty, which also keeps those prompts (and their cached results) unchanged.
+STATE_LIBRARIES = INVENTORY["state_libraries"]
+STORE_RULES = (
+    ""
+    if not STATE_LIBRARIES
+    else f"""
+This app keeps global state in {", ".join(STATE_LIBRARIES)} ({len(INVENTORY["store"])} files,
+listed in the inventory). Port it to Redux Toolkit + react-redux, because that is the
+library whose shape (a single typed store, reducers keyed by action, selectors, thunks for
+side effects) maps one-to-one onto what is already there:
+- one feature slice per reducer/state class: `createSlice({{ name, initialState, reducers }})`,
+  with the SAME state field names, so selectors and templates keep meaning
+- actions -> the slice's generated action creators; keep the action names recognisable
+- selectors -> `createSelector` in the slice file, exported one per Angular selector
+- effects (@ngrx/effects, NGXS @Action doing async work) -> `createAsyncThunk`, with the
+  pending/fulfilled/rejected cases handled in `extraReducers` where the effect dispatched
+  success/failure actions. Do NOT collapse an effect into a component useEffect: the point
+  of the barrier is that components share one store, not N private fetches.
+- `store.select(x) | async` in a template -> `useAppSelector(x)`
+- `store.dispatch(a)` -> `useAppDispatch()`
+- export typed hooks (`useAppSelector`/`useAppDispatch` bound to RootState/AppDispatch) and
+  wrap the app in <Provider store={{store}}> — component agents may only use those hooks.
+Entity adapters, meta-reducers and router-store have no React equivalent worth emulating:
+replace an entity adapter with plain normalised state, and drop router-store in favour of
+useParams/useLocation. Report anything you drop.
+"""
+)
+
 SCAFFOLD_SCHEMA = {
     "type": "object",
     "properties": {
@@ -387,6 +438,8 @@ FOUNDATION_SCHEMA = {
         "model_names": {"type": "array", "items": {"type": "string"}},
         "context_hooks": {"type": "array", "items": {"type": "string"}},
         "hook_apis": {"type": "string"},
+        # "" when the app has no store; otherwise the contract stage 2 codes against.
+        "store_api": {"type": "string"},
         "notes": {"type": "string"},
     },
     "required": [
@@ -490,8 +543,9 @@ Tasks:
    `karma*`, `protractor`, `jasmine*`, `tslint`, `ts-node` and Angular CLI package; add
    `react`, `react-dom`, `react-router-dom`, `typescript`, `vite`, `@vitejs/plugin-react`,
    the matching `@types/*`, plus `sass` if the app uses SCSS, `vite-plugin-pwa` if it
-   ships a service worker / manifest, and `dompurify` + `@types/dompurify` if any template
-   binds raw HTML ([innerHTML]). Scripts: `dev`, `build` (tsc --noEmit && vite build),
+   ships a service worker / manifest, `dompurify` + `@types/dompurify` if any template
+   binds raw HTML ([innerHTML]), and `@reduxjs/toolkit` + `react-redux` if the inventory
+   reports a state library. Scripts: `dev`, `build` (tsc --noEmit && vite build),
    `preview`, and `lint`. Use versions published well before today; never `latest`/`*`.
 3. Delete Angular config: angular.json, tsconfig.app.json, tsconfig.spec.json, tslint.json,
    karma.conf.js, ngsw-config.json, webpack.config.js, the Protractor `e2e/` suite, and
@@ -528,7 +582,7 @@ Layout conventions from stage 0 (follow exactly):
 {json.dumps(layout, indent=2, sort_keys=True)}
 
 Angular sources you own (and only these):
-{json.dumps({k: INVENTORY[k] for k in ("models", "pipes", "services", "guards", "directives", "other")}, indent=2, sort_keys=True)}
+{json.dumps({k: INVENTORY[k] for k in ("models", "pipes", "services", "guards", "directives", "other", "store")}, indent=2, sort_keys=True)}
 (Classified by decorator: `services` are @Injectable, `guards` implement CanActivate/
 CanMatch/Resolve, `models` are decorator-free shape-only files, `other` is everything left
 over — tokens, constants, helpers — which you port only if a component will need it.
@@ -537,7 +591,7 @@ NgModules and route files belong to stage 3.)
 Observed behaviour of the original app (from the reference stage) — your ported modules
 must reproduce it, especially what survives a reload:
 {json.dumps({k: reference[k] for k in ("behaviour_notes", "ui_states")}, indent=2, sort_keys=True)}
-{TRANSLATION_RULES}
+{TRANSLATION_RULES}{STORE_RULES}
 Tasks:
 1. Models/interfaces: copy them across unchanged (same names, fields and types).
 2. Pipes: convert each to a plain exported utility function, same transformation logic.
@@ -557,6 +611,10 @@ Tasks:
    flags) — one wrapper the data modules call, not logic copied per call site.
 6. If any template binds raw HTML, export a `sanitizeHtml` helper wrapping DOMPurify for the
    component agents to use. Report every helper you add under `module_paths`.
+   The `store` files, if the inventory lists any, are yours too: port them per the state
+   rules above and report the result under `store_api` — slice names, state shape, every
+   selector and action creator, and the typed hook names. Component agents get that string
+   verbatim and may not reach into the store any other way.
 7. Wire the providers into the app entry file.
 8. Delete the Angular originals you replaced. Leave every file listed in the component
    inventory and the global stylesheet directory untouched — other agents own those.
@@ -596,7 +654,8 @@ Your files (the ONLY files you may create, edit or delete):
 Layout conventions from stage 0:
 {json.dumps(layout, indent=2, sort_keys=True)}
 
-Foundation APIs from stage 1 — import these, never re-implement or guess them:
+Foundation APIs from stage 1 — import these, never re-implement or guess them (including
+`store_api`, if present: it is the only way into global state):
 {json.dumps(foundation, indent=2, sort_keys=True)}
 
 Reference screenshots of the ORIGINAL app are in {SHOTS_DIR}. Open the ones showing your
@@ -605,7 +664,7 @@ already deleted/being deleted, so these images are the only spec.
 
 Global stylesheet selectors that will fight your component's styles:
 {json.dumps(reference["global_style_hazards"], sort_keys=True)}
-{TRANSLATION_RULES}
+{TRANSLATION_RULES}{STORE_RULES}
 {CSS_RULES}
 Router specifics: replace ActivatedRoute params/data with useParams()/useSearchParams and
 Router.navigate with useNavigate(). If the component is the root AppComponent, it becomes
@@ -674,6 +733,8 @@ deleted):
 {json.dumps({k: INVENTORY[k] for k in ("routes", "modules")}, indent=2, sort_keys=True)}
 
 Tasks:
+0. If stage 1 reported a `store_api`, wire <Provider store={{store}}> into the entry file
+   above the router and check that no component fetched around the store.
 1. Routing — rebuild the route table with react-router-dom from the Angular routes above:
    same paths, same params, same redirects and wildcard fallback. Angular lazy-loaded
    modules become React.lazy + <Suspense fallback={{...}}>. Wire parent/child composition
@@ -701,10 +762,13 @@ Tasks:
    components (parent, children, siblings) for regressions. Also verify the behaviour the
    reference stage recorded: persistence across reload, refetch on navigation, error states.
    Fix whatever fails, including bugs left by earlier agents. Note that some APIs return
-   HTTP 200 with an error payload — surface those as errors, not as data.
+   HTTP 200 with an error payload — surface those as errors, not as data. With a store,
+   walk the flows that dispatch: the state each one produces, the async success/failure
+   paths the effects covered, and whether the state survives reload where it did before.
 6. Delete every remaining Angular artifact: whatever is left under {APP_DIR}, the NgModules
    above, main.ts/polyfills.ts/environments, and any Angular dependency in package.json.
-   `grep -ri "@angular" src package.json` must be empty. Stop the dev server before finishing.
+   `grep -riE "@angular|@ngrx|@ngxs" src package.json` must be empty. Stop the dev server
+   before finishing.
 
 Structured output: build_status and dev_server_status ("ok" or the exact failure), the
 routes file path, any remaining Angular files you could not remove (with the reason), the

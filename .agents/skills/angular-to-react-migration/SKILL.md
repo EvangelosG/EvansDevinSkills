@@ -53,6 +53,7 @@ root (minus `*.spec.ts`/`*.d.ts`) is classified by the decorator it carries:
 | `@Pipe` / `@Directive` / `@NgModule` | pipe / directive / module |
 | no decorator, guard interface or `*Fn` type | a functional guard |
 | no decorator, no `@angular/*` import, only `export interface/type/enum/class` | a model |
+| an import from `@ngrx/*`, `@ngxs/*`, `@datorama/akita`, `@ngneat/elf` | store state (takes precedence over `model`, which would mean "copy unchanged") |
 | `: Routes` or `RouterModule.forRoot/forChild` | a route file (also flagged on decorated files) |
 | anything else | `other` — tokens, constants, environments |
 
@@ -68,6 +69,10 @@ from that answer.
 Verified to produce an identical inventory on `angular2-hn` and on a copy of it renamed to
 Angular 20 conventions, and to resolve the right source root, guards, directives, inline
 templates and duplicate class names in a multi-project (Nx-style) `angular.json`.
+
+`test_workflow.py` next to this file covers discovery and prompt composition by running
+the whole workflow against stub agents on synthetic checkouts — `python3 -m unittest
+test_workflow` from this directory, no dependencies. Run it after editing `workflow.py`.
 
 ## The shape, and why it is this shape
 
@@ -124,6 +129,17 @@ did implicitly and React does not. These are the migration's actual bug surface:
   `@ViewChild` -> `useRef` or lifted state, `@HostListener`/`@HostBinding`, forms ->
   controlled inputs, and `Router.events` pageview tracking -> `useLocation` + `useEffect`
   with a `useRef` guard so a `/` redirect is not double-counted.
+- **A store, if the app has one** (`STORE_RULES`, injected into stages 1 and 2 *only* when
+  the inventory found one, so store-less apps keep their prompts and their cached runs).
+  NgRx/NGXS/Akita/Elf become Redux Toolkit: one `createSlice` per reducer keeping the state
+  field names, selectors as `createSelector`, effects as `createAsyncThunk` with the
+  pending/fulfilled/rejected cases the effect's success/failure actions used to carry, and
+  `store.select | async` / `store.dispatch` as typed `useAppSelector`/`useAppDispatch`.
+  Entity adapters flatten to normalised state and router-store is dropped for
+  `useParams`/`useLocation`. The store is why this is a *barrier*, not a rule: stage 1 ports
+  it and publishes `store_api` (slices, state shape, selectors, actions, hook names), and
+  component agents may only reach global state through that — otherwise a fan-out of N
+  agents invents N private stores.
 
 ## Shared VM, not separate VMs
 
@@ -178,8 +194,9 @@ than an env var:
 
 - **Multi-project workspaces / Nx.** One application is migrated — the one `angular.json`
   names first. Libraries the app imports are outside the source root and are not ported.
-- **State libraries.** NgRx/NGXS store, effects and selectors have no mapping in the
-  prompts; add one (Redux Toolkit/Zustand) before running on such an app.
+- **State libraries.** Detected and mapped to Redux Toolkit (above), but never yet run
+  against a real NgRx app: the rules are tested for composition, not for their output.
+  Read stage 1's `store_api` before letting the fan-out start.
 - **i18n and Angular Universal/SSR.** Unhandled.
 - **Very large apps.** A 60+ way fan-out contends on one shared VM; batch stage 2.
 
