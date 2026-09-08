@@ -6,7 +6,7 @@ that Devin reads, plus whatever scripts it needs.
 | Skill | What it does |
 | --- | --- |
 | [`android-e2e-demo-recording`](.agents/skills/android-e2e-demo-recording/) | Runs an Android app's unit + instrumented (Compose) tests on a Devin box and records one continuous side-by-side demo video of them, with each test's name burned in from the device log. |
-| [`angular-to-react-migration`](.agents/skills/angular-to-react-migration/) | Migrates an Angular app to React + TypeScript on Vite with a four-stage dynamic workflow: scaffold, foundation, one agent per component, combine. The component inventory is discovered from the checkout, not configured. |
+| [`angular-to-react-migration`](.agents/skills/angular-to-react-migration/) | Migrates an Angular app to React + TypeScript on Vite with a five-stage dynamic workflow: reference screenshots, scaffold, foundation, one agent per component, combine. Nothing is configured — the source root comes from `angular.json` and every unit is classified by its Angular decorator, so filename conventions do not matter. |
 
 ## Installing one
 

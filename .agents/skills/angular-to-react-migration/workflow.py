@@ -3,24 +3,26 @@
 Five stages — reference, scaffold, foundation, per-component fan-out, combine — run as shared-VM
 subagents against ONE local checkout, so there are no git branch handoffs and the
 orchestrator can commit the result itself. Parallelism is safe because every fan-out
-agent owns a disjoint set of files (its own component triplet).
+agent owns a disjoint set of files (its own component's .ts, template and styles).
 
-Configure with environment variables (see SKILL.md); everything else — the component
-inventory, the service/pipe/model list, the routes — is discovered from the checkout.
+Nothing about the target app is configured: the source root comes from angular.json and
+every unit is classified by the Angular decorator in its source rather than by its
+filename, so apps that do not follow the style guide's `*.component.ts` convention
+(Angular 20's `header.ts`, Nx libraries, hand-rolled layouts) are discovered the same way.
 
-    REPO_DIR   absolute path to the Angular checkout (required)
-    APP_DIR    Angular sources root, relative to REPO_DIR (default: src/app)
+    REPO_DIR   absolute path to the Angular checkout (default: cwd)
+    APP_DIR    override the discovered Angular sources root, relative to REPO_DIR
 """
 
 import asyncio
 import json
 import os
+import re
 import subprocess
 
 REPO_DIR = os.environ.get("REPO_DIR") or os.getcwd()
-APP_DIR = os.environ.get("APP_DIR", "src/app")
 
-# The inventory is cached on first run: stage 2 deletes the Angular triplets it ports,
+# The inventory is cached on first run: stage 2 deletes the Angular sources it ports,
 # so re-globbing on a resume would shrink the fan-out and change every prompt hash.
 STATE_DIR = os.path.join(
     os.path.expanduser("~"), ".devin-angular-react", os.path.basename(REPO_DIR.rstrip("/"))
@@ -37,36 +39,157 @@ def _git(*args):
     ).stdout.strip()
 
 
+def _source_root():
+    """Where the Angular sources live. angular.json knows; only guess if it does not."""
+    override = os.environ.get("APP_DIR")
+    if override:
+        return override
+    cfg_path = os.path.join(REPO_DIR, "angular.json")
+    if os.path.exists(cfg_path):
+        with open(cfg_path) as fh:
+            cfg = json.load(fh)
+        projects = cfg.get("projects", {})
+        candidates = [
+            name
+            for name in sorted(projects)
+            if projects[name].get("projectType", "application") == "application"
+        ]
+        default = cfg.get("defaultProject")
+        if default in candidates:  # multi-project workspace: the app, not the libs
+            candidates.insert(0, candidates.pop(candidates.index(default)))
+        for name in candidates:
+            root = projects[name].get("sourceRoot") or os.path.join(
+                projects[name].get("root", ""), "src"
+            )
+            if os.path.isdir(os.path.join(REPO_DIR, root, "app")):
+                return os.path.join(root, "app")
+            if os.path.isdir(os.path.join(REPO_DIR, root)):
+                return root
+    for guess in ("src/app", "src", "app"):
+        if os.path.isdir(os.path.join(REPO_DIR, guess)):
+            return guess
+    raise SystemExit(f"cannot find the Angular sources under {REPO_DIR}; set APP_DIR")
+
+
+APP_DIR = _source_root()
+
+# Units are classified by their decorator, not their filename: `*.component.ts` is the
+# style guide's convention rather than Angular's, and v20 scaffolds plain `header.ts`.
+_DECORATOR = re.compile(r"^\s*@(Component|Injectable|Pipe|Directive|NgModule)\s*\(", re.M)
+_CLASS = re.compile(r"export\s+(?:abstract\s+)?class\s+(\w+)")
+_SELECTOR = re.compile(r"""selector\s*:\s*['"`]([^'"`]+)""")
+_TEMPLATE_URL = re.compile(r"""templateUrl\s*:\s*['"`]([^'"`]+)""")
+_STYLE_URLS = re.compile(r"""style(?:Urls?)\s*:\s*(\[[^\]]*\]|['"`][^'"`]+['"`])""")
+_STRING = re.compile(r"""['"`]([^'"`]+)""")
+_GUARD = re.compile(
+    r"\b(CanActivate(?:Child|Fn)?|CanMatch(?:Fn)?|CanDeactivate(?:Fn)?|Resolve(?:Fn)?)\b"
+)
+_ROUTES = re.compile(r":\s*Routes\b|RouterModule\.for(?:Root|Child)\s*\(")
+# A model is any decorator-free file that only declares shapes — including the plain
+# `export class Story {}` style, which is a data class in Angular apps, not a service.
+_TYPES_ONLY = re.compile(r"export\s+(?:interface|type|enum|class)\b")
+_ANGULAR_IMPORT = re.compile(r"""from\s+['"]@angular/""")
+
+
+def _rel(path):
+    return os.path.relpath(path, REPO_DIR)
+
+
+def _resolve(base_dir, ref):
+    candidate = os.path.normpath(os.path.join(base_dir, ref))
+    return _rel(candidate) if os.path.exists(candidate) else None
+
+
+def _describe_component(path, text):
+    """A component owns its .ts plus whatever templateUrl/styleUrls actually point at."""
+    here = os.path.dirname(path)
+    template_ref = _TEMPLATE_URL.search(text)
+    styles_ref = _STYLE_URLS.search(text)
+    styles = []
+    if styles_ref:
+        styles = [
+            resolved
+            for ref in _STRING.findall(styles_ref.group(1))
+            for resolved in [_resolve(here, ref)]
+            if resolved
+        ]
+    class_match = _CLASS.search(text)
+    selector = _SELECTOR.search(text)
+    return {
+        "class_name": class_match.group(1) if class_match else os.path.basename(path)[:-3],
+        "selector": selector.group(1) if selector else "",
+        "ts": _rel(path),
+        "template": (_resolve(here, template_ref.group(1)) or "missing")
+        if template_ref
+        else "inline",
+        "styles": sorted(styles),
+    }
+
+
+def _label_for(component):
+    """`HeaderComponent` -> `header`; uniqueness is enforced by the caller."""
+    name = re.sub(r"Component$", "", component["class_name"])
+    kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", name).lower()
+    return kebab or os.path.basename(component["ts"])[:-3]
+
+
 def _scan_repo():
     """Enumerate the Angular units in the checkout, deterministically (sorted)."""
     app_root = os.path.join(REPO_DIR, APP_DIR)
-    components, services, pipes, models, guards = [], [], [], [], []
-    for dirpath, _dirnames, filenames in os.walk(app_root):
+    found = {
+        key: []
+        for key in ("components", "services", "pipes", "directives", "modules", "guards",
+                    "models", "routes", "other")
+    }
+    for dirpath, dirnames, filenames in os.walk(app_root):
+        dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", "dist"))
         for name in sorted(filenames):
-            rel = os.path.relpath(os.path.join(dirpath, name), REPO_DIR)
-            if name.endswith(".component.ts"):
-                components.append(rel[: -len(".ts")])
-            elif name.endswith(".service.ts"):
-                services.append(rel)
-            elif name.endswith(".pipe.ts"):
-                pipes.append(rel)
-            elif name.endswith(".guard.ts"):
-                guards.append(rel)
-            elif os.sep + "models" + os.sep in rel and name.endswith(".ts"):
-                models.append(rel)
-    routes = [
-        os.path.relpath(os.path.join(dp, f), REPO_DIR)
-        for dp, _dn, fn in os.walk(app_root)
-        for f in fn
-        if f.endswith(("routes.ts", "-routing.module.ts"))
-    ]
+            if not name.endswith(".ts") or name.endswith((".spec.ts", ".d.ts")):
+                continue
+            path = os.path.join(dirpath, name)
+            with open(path, errors="replace") as fh:
+                text = fh.read()
+            decorator = _DECORATOR.search(text)
+            kind = decorator.group(1) if decorator else None
+            if kind == "Component":
+                found["components"].append(_describe_component(path, text))
+            elif kind == "Injectable":
+                # Guards and resolvers are @Injectable too; what they implement decides.
+                target = "guards" if _GUARD.search(text) else "services"
+                found[target].append(_rel(path))
+            elif kind == "Pipe":
+                found["pipes"].append(_rel(path))
+            elif kind == "Directive":
+                found["directives"].append(_rel(path))
+            elif kind == "NgModule":
+                found["modules"].append(_rel(path))
+            elif _GUARD.search(text):
+                found["guards"].append(_rel(path))  # functional guard, no decorator
+            elif _TYPES_ONLY.search(text) and not _ANGULAR_IMPORT.search(text):
+                found["models"].append(_rel(path))
+            elif not kind and not _ROUTES.search(text):
+                found["other"].append(_rel(path))  # environments, tokens, helpers
+            if _ROUTES.search(text):
+                found["routes"].append(_rel(path))
+
+    components = sorted(found.pop("components"), key=lambda c: c["ts"])
+    # Labels name the fan-out agents, so they have to be unique. Two components can share a
+    # class name across feature folders (admin/list vs list), so collisions take the folder.
+    base = [_label_for(component) for component in components]
+    labels, taken = [], {}
+    for component, label in zip(components, base):
+        if base.count(label) > 1:
+            parts = [p for p in os.path.dirname(component["ts"]).split(os.sep) if p != label]
+            if parts:
+                label = f"{parts[-1]}-{label}"
+        taken[label] = taken.get(label, 0) + 1
+        labels.append(label if taken[label] == 1 else f"{label}-{taken[label]}")
+    for component, label in zip(components, labels):
+        component["label"] = label
     return {
-        "components": sorted(components),
-        "services": sorted(services),
-        "pipes": sorted(pipes),
-        "models": sorted(models),
-        "guards": sorted(guards),
-        "routes": sorted(routes),
+        "source_root": APP_DIR,
+        "components": components,
+        **{key: sorted(set(value)) for key, value in found.items()},
     }
 
 
@@ -75,6 +198,8 @@ def load_inventory():
         with open(INVENTORY_PATH) as fh:
             return json.load(fh)
     inventory = _scan_repo()
+    if not inventory["components"]:
+        raise SystemExit(f"no @Component classes found under {APP_DIR}; wrong APP_DIR?")
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(INVENTORY_PATH, "w") as fh:
         json.dump(inventory, fh, indent=2, sort_keys=True)
@@ -83,11 +208,7 @@ def load_inventory():
 
 BRANCH = _git("rev-parse", "--abbrev-ref", "HEAD")
 INVENTORY = load_inventory()
-UNITS = INVENTORY["components"]  # e.g. "src/app/core/header/header.component"
-
-
-def unit_label(base):
-    return os.path.basename(base)[: -len(".component")]
+UNITS = INVENTORY["components"]  # dicts: class_name, label, ts, template, styles, selector
 
 
 META = {
@@ -119,9 +240,9 @@ META = {
         },
         {
             "title": "components",
-            "detail": "Stage 2: port each Angular component triplet to a React .tsx + .module.scss",
+            "detail": "Stage 2: port each discovered @Component to a React .tsx + .module.scss",
             "count": len(UNITS),
-            "labels": [unit_label(u) for u in UNITS],
+            "labels": [u["label"] for u in UNITS],
             "soft_time_limit_minutes": 25,
         },
         {
@@ -407,7 +528,11 @@ Layout conventions from stage 0 (follow exactly):
 {json.dumps(layout, indent=2, sort_keys=True)}
 
 Angular sources you own (and only these):
-{json.dumps({k: INVENTORY[k] for k in ("models", "pipes", "services", "guards")}, indent=2, sort_keys=True)}
+{json.dumps({k: INVENTORY[k] for k in ("models", "pipes", "services", "guards", "directives", "other")}, indent=2, sort_keys=True)}
+(Classified by decorator: `services` are @Injectable, `guards` implement CanActivate/
+CanMatch/Resolve, `models` are decorator-free shape-only files, `other` is everything left
+over — tokens, constants, helpers — which you port only if a component will need it.
+NgModules and route files belong to stage 3.)
 
 Observed behaviour of the original app (from the reference stage) — your ported modules
 must reproduce it, especially what survives a reload:
@@ -426,14 +551,15 @@ Tasks:
    the useState initialiser (not in a useEffect), move browser listeners (matchMedia,
    resize, storage) into useEffect with proper cleanup, and keep every action name and
    state field the service exposed.
-5. Guards/resolvers, if any: port to route-level wrapper components or hooks. HttpInterceptors
+5. Guards/resolvers, if any: port to route-level wrapper components or hooks. Attribute
+   directives become a hook or a wrapper component with the same behaviour. HttpInterceptors
    become the shared fetch wrapper (auth header injection, central error handling, loading
-   flags) — keep them one wrapper the data modules call, not logic copied per call site.
+   flags) — one wrapper the data modules call, not logic copied per call site.
 6. If any template binds raw HTML, export a `sanitizeHtml` helper wrapping DOMPurify for the
-   component agents to use.
+   component agents to use. Report every helper you add under `module_paths`.
 7. Wire the providers into the app entry file.
-8. Delete the Angular originals you replaced. Leave every *.component.* file and the
-   global stylesheet directory untouched — other agents own those.
+8. Delete the Angular originals you replaced. Leave every file listed in the component
+   inventory and the global stylesheet directory untouched — other agents own those.
 9. `npx tsc --noEmit`: errors from not-yet-ported components are expected; yours must be clean.
 
 Structured output: the new module paths, the exact import specifiers other agents should
@@ -447,21 +573,25 @@ state field (name + type) and every action (name + signature).""",
     )
 
 
-async def stage2_component(base, layout, foundation, reference):
-    key = unit_label(base)
+async def stage2_component(unit, layout, foundation, reference):
+    key = unit["label"]
+    owned = "\n".join(
+        f"  - {path}"
+        for path in [unit["ts"], *unit["styles"]]
+        + ([unit["template"]] if unit["template"] not in ("inline", "missing") else [])
+    )
     log(f"stage 2: porting {key}")
     return await agent(
         f"""Migrate the Angular application at {REPO_DIR} to React — you are a STAGE 2
-component agent. Port exactly ONE Angular component triplet. {len(UNITS) - 1} sibling
+component agent. Port exactly ONE Angular component. {len(UNITS) - 1} sibling
 agents are porting the other components on this same machine right now, so touching files
 outside your assignment corrupts their work.
 {COMMON_RULES}
-Your unit: `{key}`
+Your unit: `{key}` (class `{unit["class_name"]}`, selector `{unit["selector"] or "none"}`)
 Your files (the ONLY files you may create, edit or delete):
-  - {base}.ts
-  - {base}.html   (may be an inline `template:` in the .ts instead)
-  - {base}.scss   (may not exist)
+{owned}
   - the new .tsx and .module.scss you create for it
+{"(the template is inline in the .ts)" if unit["template"] == "inline" else ""}
 
 Layout conventions from stage 0:
 {json.dumps(layout, indent=2, sort_keys=True)}
@@ -482,12 +612,13 @@ Router.navigate with useNavigate(). If the component is the root AppComponent, i
 the root App at the app component path above and renders the shell (header/footer/etc.)
 plus the router outlet — do NOT write the route table, stage 3 owns it.
 
-Sibling components you may reference by import (being written concurrently, so import at
-the conventional path even if the file is not there yet):
-{json.dumps(sorted(unit_label(u) for u in UNITS), sort_keys=True)}
+Sibling components you may reference by import (Angular selector -> the label of the agent
+porting it; they are being written concurrently, so import at the conventional path even if
+the file is not there yet):
+{json.dumps({u["selector"] or u["label"]: u["label"] for u in UNITS}, indent=2, sort_keys=True)}
 
 Tasks:
-1. Read your .ts, .html and .scss.
+1. Read the files listed above.
 2. Write a React function component in TypeScript at the conventional path, preserving the
    DOM structure, class names, text and behaviour of the Angular template. Keep loading and
    error states, and any scroll/focus side effects.
@@ -497,7 +628,7 @@ Tasks:
    stylesheets target as plain global strings.
 4. Compare your rendered markup against the reference screenshots and fix differences now;
    the later a scoping bug is found, the harder it is to attribute.
-5. Delete the original Angular triplet files listed above.
+5. Delete the original Angular files listed above.
 6. Do not run the build or the dev server; stage 3 does. `npx tsc --noEmit` is allowed but
    expect errors from components other agents have not finished.
 
@@ -537,8 +668,10 @@ and states it walked, and the behaviour it recorded:
 {json.dumps(reference, indent=2, sort_keys=True)}
 {CSS_RULES}
 
-Angular route definitions to port (read them from git history if already deleted):
-{json.dumps(INVENTORY["routes"], sort_keys=True)}
+Angular route definitions to port, and the NgModules whose declarations/providers/
+loadChildren describe the app's composition (read them from git history if already
+deleted):
+{json.dumps({k: INVENTORY[k] for k in ("routes", "modules")}, indent=2, sort_keys=True)}
 
 Tasks:
 1. Routing — rebuild the route table with react-router-dom from the Angular routes above:
@@ -569,8 +702,8 @@ Tasks:
    reference stage recorded: persistence across reload, refetch on navigation, error states.
    Fix whatever fails, including bugs left by earlier agents. Note that some APIs return
    HTTP 200 with an error payload — surface those as errors, not as data.
-6. Delete every remaining Angular artifact: leftover *.component.*, *.module.ts,
-   main.ts/polyfills.ts/environments, and any Angular dependency still in package.json.
+6. Delete every remaining Angular artifact: whatever is left under {APP_DIR}, the NgModules
+   above, main.ts/polyfills.ts/environments, and any Angular dependency in package.json.
    `grep -ri "@angular" src package.json` must be empty. Stop the dev server before finishing.
 
 Structured output: build_status and dev_server_status ("ok" or the exact failure), the
@@ -602,12 +735,12 @@ async def main():
         try:
             return await stage2_component(base, layout, foundation, reference)
         except WorkflowAgentError as exc:
-            log(f"stage 2 FAILED for {unit_label(base)}: {exc}")
+            log(f"stage 2 FAILED for {base['label']}: {exc}")
             return {
-                "component_name": unit_label(base),
+                "component_name": base["label"],
                 "file_path": "FAILED",
                 "props_interface": "unknown",
-                "notes": f"agent failed: {exc}; stage 3 must port {base}.* itself",
+                "notes": f"agent failed: {exc}; stage 3 must port {base['ts']} itself",
             }
 
     manifest = await parallel([(lambda b=b: run_unit(b)) for b in UNITS])

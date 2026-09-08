@@ -1,6 +1,6 @@
 ---
 name: angular-to-react-migration
-description: Migrate an Angular application to React + TypeScript on Vite by running a four-stage dynamic workflow (scaffold, foundation, per-component fan-out, combine). Use when asked to port, migrate or rewrite an Angular app in React.
+description: Migrate any Angular application to React + TypeScript on Vite by running a five-stage dynamic workflow (reference screenshots, scaffold, foundation, per-component fan-out, combine). Use when asked to port, migrate or rewrite an Angular app in React.
 ---
 
 # Angular -> React, as a dynamic workflow
@@ -9,34 +9,65 @@ description: Migrate an Angular application to React + TypeScript on Vite by run
 tool; this file explains what it assumes, what to do before and after it, and the
 failure modes that cost a run.
 
-```bash
-# from the Angular checkout, on a fresh branch
-REPO_DIR=/path/to/checkout   # exported for the run_workflow call
-```
+## Running it
+
+Invoke the builtin `dynamic-workflows` skill first — it owns the runtime API and the
+resume semantics this workflow relies on. Then, from a fresh branch in the Angular
+checkout:
 
 ```
 run_workflow(workflow_name="angular-to-react",
              script_path=".../.agents/skills/angular-to-react-migration/workflow.py")
 ```
 
-Invoke the builtin `dynamic-workflows` skill first — it owns the runtime API and the
-resume semantics this workflow relies on.
+A user who wants this run on some other repo asks for it like this, and Devin does the
+rest (clone both, branch, run, commit, PR):
+
+> Migrate the Angular app in `owner/repo` to React. Clone `EvangelosG/EvansDevinSkills`
+> and follow its `angular-to-react-migration` skill — run its `workflow.py` with
+> `run_workflow`, `REPO_DIR` pointed at the checkout. Open a PR when it's done.
+
+Or copy this directory into the target repo's `.agents/skills/` once, after which
+"migrate this app to React" matches the skill on its own.
 
 ## Nothing here is app-specific
 
-Configuration is two environment variables, and both have defaults:
+Configuration is two environment variables and neither is normally set:
 
 ```bash
-REPO_DIR=$PWD        # the Angular checkout
-APP_DIR=src/app      # Angular sources root inside it
+REPO_DIR=$PWD    # the Angular checkout (default: cwd)
+APP_DIR=...      # override the sources root; only for layouts angular.json does not describe
 ```
 
-Everything else — which components exist, which services are stateless HTTP wrappers and
-which are stateful, the models, the pipes, the guards, the route files — is discovered by
-walking the checkout, and the discovered inventory is injected into the prompts. The
-target layout (`components/`, `services/`, `context/`, `models/`, styles, routes) is not
-hardcoded either: stage 0 chooses it and reports it, and every later prompt is built from
-that answer.
+The sources root comes from `angular.json` — `defaultProject` first, else the first
+application project, using its `sourceRoot` (and its `app/` subdirectory if there is one).
+Only if there is no usable `angular.json` does it fall back to guessing `src/app`.
+
+The inventory is then read **from the source, not the filenames**. Every `.ts` under the
+root (minus `*.spec.ts`/`*.d.ts`) is classified by the decorator it carries:
+
+| Found | Classified as |
+| --- | --- |
+| `@Component` | a fan-out unit; its template and stylesheets come from the actual `templateUrl`/`styleUrl(s)` values, so inline templates and non-adjacent files are handled |
+| `@Injectable` | a service — or a **guard** if it implements `CanActivate`/`CanMatch`/`CanDeactivate`/`Resolve` |
+| `@Pipe` / `@Directive` / `@NgModule` | pipe / directive / module |
+| no decorator, guard interface or `*Fn` type | a functional guard |
+| no decorator, no `@angular/*` import, only `export interface/type/enum/class` | a model |
+| `: Routes` or `RouterModule.forRoot/forChild` | a route file (also flagged on decorated files) |
+| anything else | `other` — tokens, constants, environments |
+
+So it does not care whether the app follows the style guide's `header.component.ts` or
+Angular 20's `header.ts`, whether models live in `models/` or `types/`, or whether the
+stylesheet is named after the component. Fan-out labels come from the class name
+(`HeaderComponent` -> `header`), disambiguated by folder when two components share a name.
+
+The target layout (`components/`, `services/`, `context/`, `models/`, styles, routes) is
+not hardcoded either: stage 0 chooses it and reports it, and every later prompt is built
+from that answer.
+
+Verified to produce an identical inventory on `angular2-hn` and on a copy of it renamed to
+Angular 20 conventions, and to resolve the right source root, guards, directives, inline
+templates and duplicate class names in a multi-project (Nx-style) `angular.json`.
 
 ## The shape, and why it is this shape
 
@@ -45,7 +76,7 @@ that answer.
 | -1 reference | 1 | runs the **Angular** app and screenshots every route/state, **before anything is deleted** |
 | 0 scaffold | 1 | Vite + React + tsconfig, package.json purge, Angular config deletion, **publishes the src/ layout** |
 | 1 foundation | 1 | models, pipes, services -> fetch/Promise modules, stateful services -> context + hook, **publishes exact signatures** |
-| 2 components | one per `*.component.ts` | one triplet each -> `.tsx` + `.module.scss`, deletes the original |
+| 2 components | one per discovered `@Component` | one component each -> `.tsx` + `.module.scss`, deletes the original .ts/template/styles |
 | 3 combine | 1 | routing, global/theme SCSS, PWA, hosting/CI config, build + **screenshot-diff** verification, deletes leftovers |
 
 Stages 0/1 are barriers on purpose. The fan-out is only safe because the shared
@@ -58,7 +89,7 @@ Stage 3 is a barrier because it consumes the component manifest (name, path, pro
 interface) to wire routing and composition.
 
 The reference stage exists because the migration is destructive: stage 2 deletes each
-triplet it ports, so from that moment the original app cannot be run or looked at again.
+component it ports, so from that moment the original app cannot be run or looked at again.
 Its screenshots (in `~/.devin-angular-react/<repo>/reference-screenshots/`) are the
 acceptance criteria — stage 3 walks them one by one and diffs the React app against each,
 and component agents consult the ones showing their component. "Feature parity" with no
@@ -102,7 +133,7 @@ tree that must typecheck together — passing 11 branches around and merging the
 most of the work.
 
 It is only safe because **file ownership is disjoint**: each fan-out agent may touch only
-its own triplet and the two files it creates. The prompts say so explicitly, and the
+the files of its own component and the two it creates. The prompts say so explicitly, and the
 sibling-name list is passed in so an agent imports a not-yet-written sibling at the
 conventional path instead of creating its own copy. Keep that property if you edit the
 prompts; two agents on one file will silently clobber each other.
@@ -121,7 +152,7 @@ byte-identical. Two things would otherwise break that, and both are handled:
   `~/.devin-angular-react/<repo>/`, so a resume neither rescans nor tries to re-photograph
   an app whose sources are gone.
 - **The inventory is cached** to `~/.devin-angular-react/<repo>/inventory.json` on the
-  first run. Stage 2 deletes the triplets it ports, so a re-glob on resume would return a
+  first run. Stage 2 deletes the components it ports, so a rescan on resume would return a
   shorter list and change every prompt. Delete that file to force a rescan.
 - Embedded JSON is dumped with `sort_keys=True` everywhere.
 
@@ -140,11 +171,23 @@ and handed to stage 3 to port itself, so one bad agent does not sink the run.
 4. Update the repo blueprint: the Angular `test`/`lint` commands in it are now wrong
    (Karma is gone and there is usually no test script at all).
 
+## Where it still needs a human
+
+Discovery is generic; these are gaps in the *prompts*, and they want a script edit rather
+than an env var:
+
+- **Multi-project workspaces / Nx.** One application is migrated — the one `angular.json`
+  names first. Libraries the app imports are outside the source root and are not ported.
+- **State libraries.** NgRx/NGXS store, effects and selectors have no mapping in the
+  prompts; add one (Redux Toolkit/Zustand) before running on such an app.
+- **i18n and Angular Universal/SSR.** Unhandled.
+- **Very large apps.** A 60+ way fan-out contends on one shared VM; batch stage 2.
+
 ## Cost and timing
 
 Measured on a small app (11 components, angular2-hn) **without** the reference stage:
 **~7 minutes wall clock end to end**, because stage 2's eleven agents run concurrently and
-each has one small triplet to port. Stages 0, 1 and 3 are the long poles. The reference
+each has one small component to port. Stages 0, 1 and 3 are the long poles. The reference
 stage and the screenshot diffing in stage 3 add serial browser time — budget more like
 30-45 minutes for the pair, which is the price of a checkable parity claim.
 
@@ -154,6 +197,7 @@ stage and the screenshot diffing in stage 3 add serial browser time — budget m
 | --- | --- |
 | Components each invent their own API client | Stage 1's structured output was vague. Its signatures must be full TypeScript signatures, not prose. |
 | A resume starts every agent fresh | The inventory rescanned, or a prompt embeds an unsorted dict. |
+| Discovery finds no components | Wrong source root (a workspace whose `angular.json` names a library first). Set `APP_DIR` and delete the cached inventory. |
 | Global theme styles stop applying | A component agent CSS-moduled a class that global SCSS targets. Component-scoped styles only; theme class names stay global strings. |
 | `npm run build` passes but a route is blank | Stage 3 only checks the routes it knows about. Hand the PR to the testing agent. |
 | Input/panel much wider in React than Angular | A `width: %` or `display: block` that ViewEncapsulation used to constrain. Fixed sizing. |
