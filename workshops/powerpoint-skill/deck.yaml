@@ -1,0 +1,117 @@
+# The workshop deck. Built by the very skill it teaches:
+#   python3 ../../.agents/skills/quarterly-deck/scripts/build_deck.py deck.yaml \
+#       --brand brand.yaml --out /tmp/workshop.pptx
+# Speaker notes live in talk-track.md, numbered to match these slides.
+title: Building a PowerPoint skill in Devin Desktop
+
+slides:
+  - type: title
+    title: Building a PowerPoint skill
+    subtitle: Devin Desktop, hands on
+    date: One deck you never format again
+
+  - type: bullets
+    title: Where this lands
+    bullets:
+      - "\"Work of work\": metrics capture, decks, admin — the recurring reporting loop"
+      - Someone pulls numbers, pastes them into last quarter's file, reformats for a day
+      - The numbers are not the hard part; the sameness is
+      - Today we build the process once and run it every quarter
+
+  - type: bullets
+    title: A prompt is a session. A skill is a process.
+    bullets:
+      - A good prompt dies when the tab closes, and the next person writes their own
+      - A skill is a file — reviewed, version-controlled, shared with the team
+      - It carries the parts a model cannot guess: your template, your rules
+      - Same input, same discipline, every time
+
+  - type: bullets
+    title: What you have open
+    bullets:
+      - Devin Desktop v3.9.19 removed Cascade — Devin Local is the agent now
+      - Same skill format as the Devin CLI and cloud Devin
+      - Memories and Workflows are gone; skills replace them
+      - Old Cascade conversations migrate via the Cascade Migration Wizard
+
+  - type: section
+    title: Anatomy of a skill
+    text: A folder, a markdown file, and whatever it needs
+
+  - type: bullets
+    title: A skill is a folder
+    bullets:
+      - "SKILL.md — frontmatter plus the instructions Devin follows"
+      - Supporting files sit beside it — your .pptx template, scripts, data
+      - "Project: .agents/skills/<name>/ — committed, shared with the repo"
+      - "Global: ~/.config/devin/skills/ — %APPDATA%\\devin\\skills on Windows"
+
+  - type: table
+    title: The frontmatter
+    source: frontmatter.csv
+    source_note: "Source: docs.devin.ai/desktop — Devin Local skills"
+
+  - type: bullets
+    title: The description is the trigger
+    bullets:
+      - Only the name and description sit in context until the skill is needed
+      - Write it as when to use this, not what this is
+      - "Bad: \"Deck generator.\" Good: \"Use when asked for a QBR deck from metrics and notes.\""
+      - Or invoke it yourself with /quarterly-deck
+
+  - type: section
+    title: Let's build one
+    text: You write the description; Devin writes the file
+
+  - type: bullets
+    title: Live — ask Devin Local to author the skill
+    bullets:
+      - "\"Create a skill called quarterly-deck that turns metrics.csv and notes.md into a deck\""
+      - There is no + New Skill button — you build it by talking, then read what it wrote
+      - Open the customizations panel to confirm the skill loaded
+      - Read the SKILL.md together and correct one thing out loud
+
+  - type: bullets
+    title: Live — run it
+    bullets:
+      - "/quarterly-deck Q3 FY26 — or just describe the task and let it pick the skill"
+      - It reads the numbers and the notes, then proposes an outline
+      - You argue about the outline, not about fonts
+      - Then it builds, checks, and renders the deck
+
+  - type: bullets
+    title: The step that earns trust
+    bullets:
+      - The skill validates the deck — bullet counts, title length, source notes, overflow
+      - Then it renders every slide to an image and looks at them
+      - Text spilling out of its box is the classic failure, and it is invisible in XML
+      - No deck leaves without both
+
+  - type: two_column
+    title: Live — change your mind
+    left_heading: Change the rule
+    left_bullets:
+      - "max_bullets_per_slide: 4"
+      - Rerun; the checker now fails the summary slide
+      - Devin shortens it and rebuilds
+    right_heading: Change the story
+    right_bullets:
+      - Add a risks slide to the spec
+      - Rebuild in seconds, same brand
+      - The deck is disposable; the skill is the asset
+
+  - type: bullets
+    title: Making it yours
+    bullets:
+      - Drop your real .pptx in as the template — you inherit your master slides
+      - Re-map the layout indices once, then never think about them again
+      - Put your brand rules in brand.yaml so the checker enforces them
+      - Point it at your real numbers when you are ready
+
+  - type: closing
+    title: Your turn — 15 minutes
+    bullets:
+      - Pick one deck you rebuild every month
+      - Ask Devin Local to write the skill; read what it wrote
+      - Run it once on fake numbers, then fix one thing you did not like
+      - Commit it, so it is your team's skill and not your skill
