@@ -1,0 +1,6 @@
+Field,What it does,Needed?
+name,The slash command — /quarterly-deck,Yes
+description,What Devin reads to decide to use it,Yes
+argument-hint,Shown in the slash-command completion,No
+allowed-tools,Restricts what the skill may run,No
+model,Pins a model for this skill,No

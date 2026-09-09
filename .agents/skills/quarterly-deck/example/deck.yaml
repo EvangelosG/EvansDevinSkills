@@ -1,0 +1,74 @@
+# A worked example: what the agent should produce from notes.md + the CSVs.
+# The spec is the thing a human reviews and edits; the .pptx is disposable output.
+title: Q3 FY26 Operations Review
+subtitle: Northwind Logistics
+presenter: Operations
+date: October 2026
+
+slides:
+  - type: title
+    title: Q3 FY26 Operations Review
+    subtitle: Northwind Logistics
+    presenter: Operations
+    date: October 2026
+
+  - type: bullets
+    title: The quarter in five lines
+    bullets:
+      - On-time delivery averaged 95.9%, ahead of the 95.0% target
+      - Cost per shipment fell 5.2% to $37.08
+      - Volume grew 9.0% to 69,310 shipments
+      - NPS rose from 38 to 43 on delivery predictability
+      - July was the one bad month — Atlanta outage, under-forecast peak
+
+  - type: table
+    title: Quarter over quarter
+    source: kpis.csv
+    source_note: "Source: kpis.csv, ops data warehouse, pulled 2026-10-02"
+
+  - type: chart
+    title: On-time delivery trend
+    source: metrics.csv
+    category_column: month
+    series_columns: [on_time_delivery_pct]
+    chart_type: line
+    source_note: "Source: metrics.csv, monthly ops extract"
+
+  - type: chart
+    title: Cost per shipment
+    source: metrics.csv
+    category_column: month
+    series_columns: [cost_per_shipment_usd]
+    chart_type: column
+    source_note: "Source: metrics.csv, monthly ops extract"
+
+  - type: two_column
+    title: What drove the result
+    left_heading: Helped
+    left_bullets:
+      - Midwest hub automation live in July
+      - Linehaul rates renegotiated in May
+      - Better trailer utilisation
+    right_heading: Hurt
+    right_bullets:
+      - Atlanta sortation outage, three days
+      - Peak volume under-forecast by 8%
+      - Claims still concentrated in two accounts
+
+  - type: section
+    title: Risks and asks
+    text: What we need decided before peak
+
+  - type: bullets
+    title: Risks going into Q4
+    bullets:
+      - Atlanta fix has not been load-tested at peak volume
+      - Linehaul deal expires next June
+      - Hiring freeze slips two hub rollouts to Q1
+
+  - type: closing
+    title: Asks
+    bullets:
+      - Approve an exception for two automation engineers
+      - Decide whether the on-time target moves from 95% to 96%
+      - Sign off the claims remediation plan by 31 October

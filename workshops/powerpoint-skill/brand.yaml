@@ -1,0 +1,24 @@
+company: Cognition
+
+colors:
+  dark: 111827
+  light: FFFFFF
+  accent1: 111827
+  accent2: 4B5563
+  accent3: 9CA3AF
+  accent4: 6B7280
+  muted: 6B7280
+
+fonts:
+  heading: Verdana
+  body: Verdana
+
+footer: "Devin Desktop workshop"
+
+rules:
+  max_bullets_per_slide: 5
+  max_chars_per_bullet: 110
+  max_title_chars: 70
+  max_table_rows: 8
+  require_footer: true
+  require_source_note_on_data_slides: true

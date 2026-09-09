@@ -1,0 +1,30 @@
+# The one file a new team edits. Everything else in this skill reads from here,
+# so adopting the skill means changing these values, not the scripts.
+
+company: Northwind Logistics
+
+# Hex, no leading '#'. accent1 is the primary; charts cycle accent1..accent4.
+colors:
+  dark: 1F2933      # body text, table rules
+  light: FFFFFF     # slide background
+  accent1: 1D6FB8
+  accent2: 12A594
+  accent3: E8833A
+  accent4: 8B5CF6
+  muted: 7B8794     # footers, source lines, axis labels
+
+fonts:
+  heading: Verdana
+  body: Verdana
+
+footer: "Northwind Logistics — Internal"
+
+# Enforced by scripts/check_deck.py. A deck that breaks one of these fails the
+# check; the numbers are deliberately strict because a reviewer will not be.
+rules:
+  max_bullets_per_slide: 5
+  max_chars_per_bullet: 110
+  max_title_chars: 70
+  max_table_rows: 8
+  require_footer: true
+  require_source_note_on_data_slides: true
