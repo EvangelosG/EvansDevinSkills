@@ -17,8 +17,8 @@ You need `python-pptx` and `openpyxl` to write the deck and read the workbooks, 
 
 ## Read these first, in this order
 
-All paths are relative to this folder's root (the folder that contains `.agents/`, `template/`,
-`data/`, `last-cycle/` and `notes/`).
+All paths are relative to this skill's own folder, the one holding this file alongside `template/`,
+`data/`, `last-cycle/` and `notes/`.
 
 | File | What you take from it |
 | --- | --- |
@@ -55,10 +55,12 @@ Nothing wraps. A slide title has to fit one line at 30 pt — roughly 45 charact
 line at 17 pt, roughly 95. Write shorter rather than letting a line spill into the content area or a
 table header stack onto two lines.
 
-Save as `Program_Review_<month>.pptx` in the folder root. Real text boxes and real tables, so every
+Save as `Program_Review_<month>.pptx` in this skill's folder. Real text boxes and real tables, so every
 word stays editable in PowerPoint — never an image of a slide, never a PDF export renamed.
 
 ## Then check your own work
+
+From that same folder:
 
 ```bash
 soffice --headless --convert-to pdf --outdir . Program_Review_<month>.pptx

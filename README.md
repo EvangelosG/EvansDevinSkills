@@ -6,6 +6,7 @@ that Devin reads, plus whatever scripts it needs.
 | Skill | What it does |
 | --- | --- |
 | [`android-e2e-demo-recording`](.agents/skills/android-e2e-demo-recording/) | Runs an Android app's unit + instrumented (Compose) tests on a Devin box and records one continuous side-by-side demo video of them, with each test's name burned in from the device log. |
+| [`monthly-review-deck`](.agents/skills/monthly-review-deck/) | Builds the monthly program review deck as an editable .pptx from the template, style guide, this cycle's workbooks and last cycle's deck, renders it, and checks every slide. Ships with the working folder it reads. |
 
 ## Installing one
 
@@ -17,15 +18,14 @@ Each `SKILL.md` therefore documents only how to *use* the skill, not how to inst
 
 For a robust list of Android specific skills, see https://github.com/android/skills
 
-## [`monthly-review-deck/`](monthly-review-deck/)
+## [`monthly-review-deck`](.agents/skills/monthly-review-deck/)
 
-Not a skill to install elsewhere — a whole working folder, kept here so "a recurring deck as a Skill"
-can be demoed live. It is what a program manager's folder looks like once the skill exists:
+This one carries its inputs with it — a program manager's whole working folder lives inside the
+skill, so copying the directory copies everything it reads:
 
 ```text
-monthly-review-deck/
-├── .agents/skills/monthly-review-deck/
-│   └── SKILL.md                           the procedure, written once
+.agents/skills/monthly-review-deck/
+├── SKILL.md                               the procedure, written once
 ├── template/
 │   ├── Program_Review_Template.pptx       approved master slides
 │   └── Style_Guide.md                     fonts, palette, spacing, logo rules
@@ -38,8 +38,8 @@ monthly-review-deck/
     └── Talking_Points.md                  you rewrite this each cycle
 ```
 
-Open that folder itself in Devin Desktop (`File → Open Folder → monthly-review-deck/`) so it is the
-project root, then run `/monthly-review-deck 2026-09`. Next cycle: drop the new `data/` files in,
-rewrite `notes/Talking_Points.md`, move the deck you just made into `last-cycle/`, run it again.
+Open this repo in Devin Desktop and run `/monthly-review-deck 2026-09`; the deck lands next to
+`SKILL.md`. Next cycle: drop the new `data/` files in, rewrite `notes/Talking_Points.md`, move the
+deck you just made into `last-cycle/`, run it again.
 
 The data is fictional.
