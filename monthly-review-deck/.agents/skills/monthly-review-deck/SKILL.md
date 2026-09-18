@@ -6,9 +6,14 @@ description: Build the monthly program review deck as an editable .pptx from the
 # The monthly program review deck
 
 One argument: the month, as `YYYY-MM` (`/monthly-review-deck 2026-10`). If it is missing, ask for it
-before doing anything else — do not guess from today's date.
+before doing anything else — do not guess from today's date. That is the only question to stop for:
+anywhere else the inputs are ambiguous, make the call, build the deck, and say what you chose in the
+speaker notes.
 
 The format was decided once. Your job is to put this cycle's content into it, not to redesign it.
+
+You need `python-pptx` and `openpyxl` to write the deck and read the workbooks, and LibreOffice
+(`soffice`) to render it. Install what is missing before you start.
 
 ## Read these first, in this order
 
@@ -35,7 +40,8 @@ Section order is fixed by the style guide: title, status summary, schedule, risk
 - **Status summary** — a title a reviewer could repeat, then at most four lines. Lead with whatever
   `notes/Talking_Points.md` says to lead with; the ask goes on this slide, not at the end.
 - **Schedule** — table of the five tasks with the largest slip, sorted by variance descending:
-  task ID, task, baseline finish, forecast finish, variance in working days, owner.
+  task ID, task, baseline finish, forecast finish, variance in working days, owner. Equal variance:
+  the task on the critical path goes first.
 - **Risks** — table of open risks rated high, newest first (by `Opened`): risk ID, risk, owner,
   mitigation due. Risks with status `Closed` never appear.
 - **Decisions needed** — one line per decision: what, who owns it, the date it is needed. Take these
@@ -45,6 +51,10 @@ Rules that are not negotiable, from `template/Style_Guide.md`: six lines maximum
 moves to the speaker notes, dates are ISO, and every slide carrying numbers names its source file and
 sheet in the speaker notes (`Source: data/Risk_Register_2026-09.xlsx, sheet "Risk Register"`).
 
+Nothing wraps. A slide title has to fit one line at 30 pt — roughly 45 characters — and a bullet one
+line at 17 pt, roughly 95. Write shorter rather than letting a line spill into the content area or a
+table header stack onto two lines.
+
 Save as `Program_Review_<month>.pptx` in the folder root. Real text boxes and real tables, so every
 word stays editable in PowerPoint — never an image of a slide, never a PDF export renamed.
 
@@ -53,6 +63,8 @@ word stays editable in PowerPoint — never an image of a slide, never a PDF exp
 ```bash
 soffice --headless --convert-to pdf --outdir . Program_Review_<month>.pptx
 ```
+
+If that command is not available, say so in your reply — do not report the deck as checked.
 
 Look at every page of that PDF and fix what you find, then render and look again:
 
