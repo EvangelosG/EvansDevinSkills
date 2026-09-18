@@ -6,7 +6,6 @@ that Devin reads, plus whatever scripts it needs.
 | Skill | What it does |
 | --- | --- |
 | [`android-e2e-demo-recording`](.agents/skills/android-e2e-demo-recording/) | Runs an Android app's unit + instrumented (Compose) tests on a Devin box and records one continuous side-by-side demo video of them, with each test's name burned in from the device log. |
-| [`monthly-review-deck`](.agents/skills/monthly-review-deck/) | Builds a recurring program review deck as an editable `.pptx` from an approved template and style guide, this cycle's data and last cycle's deck, then renders it and reviews its own slides. |
 
 ## Installing one
 
@@ -18,22 +17,29 @@ Each `SKILL.md` therefore documents only how to *use* the skill, not how to inst
 
 For a robust list of Android specific skills, see https://github.com/android/skills
 
-## Examples
+## [`monthly-review-deck/`](monthly-review-deck/)
 
-| Example | What it is for |
-| --- | --- |
-| [`examples/monthly-review-deck`](examples/monthly-review-deck/) | Input folder for demoing "a recurring deck as a Skill" live: an approved template and style guide, this cycle's data, last cycle's deck, and the presenter's talking points. Fictional data. |
+Not a skill to install elsewhere — a whole working folder, kept here so "a recurring deck as a Skill"
+can be demoed live. It is what a program manager's folder looks like once the skill exists:
 
-Open the example folder itself in Devin Desktop (`File → Open Folder → examples/monthly-review-deck/`),
-since the skill's paths are relative to the folder that holds `template/`, `data/`, `last-cycle/` and
-`notes/`.
-
-It deliberately ships without the skill, so a demo can build the deck by hand first and then ask Devin
-to write the skill — which is the point of the exercise. To skip that and run it straight away, copy
-[`.agents/skills/monthly-review-deck/`](.agents/skills/monthly-review-deck/) into the example folder
-and run `/monthly-review-deck 2026-09`:
-
-```bash
-mkdir -p examples/monthly-review-deck/.agents/skills
-cp -r .agents/skills/monthly-review-deck examples/monthly-review-deck/.agents/skills/
+```text
+monthly-review-deck/
+├── .agents/skills/monthly-review-deck/
+│   └── SKILL.md                           the procedure, written once
+├── template/
+│   ├── Program_Review_Template.pptx       approved master slides
+│   └── Style_Guide.md                     fonts, palette, spacing, logo rules
+├── data/
+│   ├── Schedule_Status_2026-09.xlsx       this cycle
+│   └── Risk_Register_2026-09.xlsx
+├── last-cycle/
+│   └── Program_Review_2026-08.pptx        the shape leadership expects
+└── notes/
+    └── Talking_Points.md                  you rewrite this each cycle
 ```
+
+Open that folder itself in Devin Desktop (`File → Open Folder → monthly-review-deck/`) so it is the
+project root, then run `/monthly-review-deck 2026-09`. Next cycle: drop the new `data/` files in,
+rewrite `notes/Talking_Points.md`, move the deck you just made into `last-cycle/`, run it again.
+
+The data is fictional.
