@@ -16,3 +16,13 @@ it is that repo's skill and Devin picks it up on its own — nothing here is fet
 Each `SKILL.md` therefore documents only how to *use* the skill, not how to install it.
 
 For a robust list of Android specific skills, see https://github.com/android/skills
+
+## Examples
+
+| Example | What it is for |
+| --- | --- |
+| [`examples/monthly-review-deck`](examples/monthly-review-deck/) | A self-contained folder for demoing "a recurring deck as a Skill" live: an approved template and style guide, this cycle's data, last cycle's deck, the presenter's talking points, and the `monthly-review-deck` skill that turns them into an editable `.pptx`. |
+
+Open the example folder itself in Devin Desktop (`File → Open Folder → examples/monthly-review-deck/`)
+so its own `.agents/skills/` is picked up, then run `/monthly-review-deck 2026-09`. The data is
+fictional.
